@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 import requests
 import io
 import os
+import shutil
 import datetime
 import random
 import asyncio
@@ -13,6 +14,7 @@ import hashlib
 import urllib.parse
 import webbrowser
 from tkinter import ttk
+from pprint import pprint
 
 # Define the current version of the script
 CURRENT_VERSION = "1.2.140"
@@ -30,9 +32,11 @@ class ImageGeneratorApp:
         self.generating_image = False
         self.generated_images = []
 
-        self.default_styles = ["Empty"]
-        self.user_styles = self.load_styles_from_file()
-        self.styles = self.default_styles + [style.split(":", 1)[0] for style in self.user_styles]
+        self.default_styles = self.load_styles_from_file("ASSETS/STYLES.txt")
+        self.user_styles = self.load_styles_from_file("user_styles.txt")
+        self.all_styles =  self.combine_styles(self.default_styles, self.user_styles)
+        #pprint(self.all_styles)
+        self.style_list = [style.split(":")[0] if ":" in style else style for style in self.all_styles]
 
         self.menu_bar = tk.Menu(self.root)
         self.root.config(menu=self.menu_bar)
@@ -72,6 +76,7 @@ class ImageGeneratorApp:
         self.random_seed_checkbutton = tk.Checkbutton(text="RANDOM", variable=self.random_seed_var, command=self.toggle_random_seed)
         self.random_seed_checkbutton.grid(row=3, column=0, sticky="e")
 
+
         # Add this line to create an empty column before the style_combobox
         self.root.grid_columnconfigure(2, minsize=20)
 
@@ -79,6 +84,10 @@ class ImageGeneratorApp:
         self.style_combobox = ttk.Combobox(root, textvariable=self.style_var, values=self.styles, state="readonly", width=17)
         self.style_combobox.grid(row=3, column=3, columnspan=3, sticky="w", padx=10)
         self.style_combobox.bind("<<ComboboxSelected>>", self.on_style_selected)
+
+        self.create_style_menu(self.style_list)
+        self.style_menu.grid(row=3, column=3, columnspan=3, sticky="w", padx=10)
+
 
         self.ratio_var = tk.StringVar(value="1:1")
         self.ratio_1_1 = tk.Radiobutton(root, text="1:1", variable=self.ratio_var, value="1:1", command=self.toggle_ratio, padx=50)
@@ -174,24 +183,23 @@ class ImageGeneratorApp:
             self.custom_width_entry.config(state='disabled')
             self.custom_height_entry.config(state='disabled')
 
-    def load_user_styles(self):
-        print("Loading user styles...")
-        user_styles = []
-        user_styles_file = './ASSETS/user_styles.txt'
-        if os.path.exists(user_styles_file):
-            with open(user_styles_file, "r", encoding='utf-8') as file:
-                user_styles = [line.strip() for line in file.readlines() if not line.strip().startswith("#")]
-        print(f"Loaded user styles: {user_styles}")
-        return user_styles
+    def combine_styles(self, styles1, styles2):
+        total_styles = styles1.copy()
+        for style_item in styles2:
+            style_name = style_item.split(":")[0]
+            if not any(item.startswith(style_name) for item in styles1):
+                total_styles.append(style_item)
+        print(f"Total Style Count = {len(total_styles)}")
+        return total_styles
 
-    def load_styles_from_file(self):
-        print("Loading styles from file...")
+    def load_styles_from_file(self,filepath):
+        print(f"Loading styles from {filepath}")
         styles = []
-        styles_file = './ASSETS/styles.txt'
-        if os.path.exists(styles_file):
-            with open(styles_file, "r", encoding='utf-8') as file:
-                styles = [line.strip() for line in file.readlines() if not line.strip().startswith("#")]
-        print(f"Loaded styles: {styles}")
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding='utf-8') as file:
+                styles = [line.strip() for line in file.readlines() if not line.strip().startswith("##")]
+        totalimported = len(styles)
+        print(f"Loaded {totalimported} styles from {filepath}")
         return styles
 
     def save_user_styles(self):
@@ -246,6 +254,30 @@ class ImageGeneratorApp:
         self.style_var.set(self.styles[0])
         self.style_button.config(text=f"Style: {self.styles[0]}")
 
+    def create_style_menu(self,all_styles):
+        self.style_menu = tk.OptionMenu(root, self.style_var, *all_styles)
+        self.style_menu['menu'].delete(0, 'end')
+        for style in all_styles:
+            self.style_menu['menu'].add_command(label=style, command=tk._setit(self.style_var, style))
+            if style.startswith("#"):
+                self.style_menu['menu'].entryconfigure(style, state = "disabled")
+        pprint(self.style_menu)
+        self.style_var.set(all_styles[0])
+        #self.style_menu.grid(row=3, column=3, columnspan=3, sticky="w", padx=10)
+
+
+    def create_style_menu(self,all_styles):
+        self.style_menu = tk.OptionMenu(root, self.style_var, *all_styles)
+        self.style_menu['menu'].delete(0, 'end')
+        for style in all_styles:
+            self.style_menu['menu'].add_command(label=style, command=tk._setit(self.style_var, style))
+            if style.startswith("#"):
+                self.style_menu['menu'].entryconfigure(style, state = "disabled")
+        pprint(self.style_menu)
+        self.style_var.set(all_styles[0])
+        #self.style_menu.grid(row=3, column=3, columnspan=3, sticky="w", padx=10)
+
+
     def set_save_path(self):
         new_path = filedialog.askdirectory()
         if new_path:
@@ -293,10 +325,20 @@ class ImageGeneratorApp:
 
         style = self.style_var.get()
         print(f"User selected style: {style}")
+        negative_style = ""
+        if style == "Random":
+            while style == "Random":
+                print("Picking Style...")
+                style = random.choice(self.style_list)
+                if style in ["Empty"] or "#" in style:
+                    style = "Random"
+            print(f"Picked {style}")
         if style == "Empty":
             full_prompt = prompt
-        elif style in [s.split(":", 1)[0] for s in self.user_styles]:
-            style_prompt = self.user_styles[[s.split(":", 1)[0] for s in self.user_styles].index(style)].split(":", 1)[1].split("),")[0] + "), {prompt}"
+        elif style in [s.split(":")[0] for s in self.all_styles]:
+            positive_style = self.all_styles[[s.split(":")[0] for s in self.all_styles].index(style)].split(": (")[1].split("),")[0]
+            negative_style = self.all_styles[[s.split(":")[0] for s in self.all_styles].index(style)].split(": (")[1].split("), ")[1]
+            style_prompt = f"{prompt}," + positive_style
             full_prompt = style_prompt.format(prompt=prompt)
         else:
             messagebox.showerror("Error", "Selected style is not valid")
@@ -309,6 +351,8 @@ class ImageGeneratorApp:
             nologo_param = f"nologo={nologo_password}"
         else:
             nologo_param = "nologo=true"
+        
+        
 
         params = [nologo_param]
         if self.private_var.get():
@@ -334,6 +378,9 @@ class ImageGeneratorApp:
         params.append(f"width={width}")
         params.append(f"height={height}")
         params.append(f"enhance={str(self.enhance_var.get()).lower()}")
+
+        if negative_style:
+            params.append(f"negative={requests.utils.quote(negative_style)}")
 
         # URL encode the full prompt
         encoded_prompt = urllib.parse.quote(full_prompt)
@@ -587,7 +634,13 @@ class ImageGeneratorApp:
     def open_save_path(self):
         path = os.path.abspath(self.save_path)
         if os.path.exists(path):
-            os.startfile(path)
+            try:
+                os.startfile(path)
+            except Exception:
+                try:
+                    os.system(f'open {path}')
+                except Exception:
+                    pass
         else:
             messagebox.showerror("Error", f"Save path does not exist: {path}")
 

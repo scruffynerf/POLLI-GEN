@@ -5,3 +5,4 @@ POLLI-GEN-*.py
 GENERATED/
 settings.txt
 user_styles.txt
+.DS_Store
